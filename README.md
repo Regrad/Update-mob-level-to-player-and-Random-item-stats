@@ -1,4 +1,4 @@
-Name: mob-level and Item-stats
+Name: Update-mob-level-to-player and Random-item-stats
 Author: Regrad (Engardium)
 Repository: https://github.com/Regrad/Two-patches
 Download: https://github.com/Regrad/Two-patches.git
