@@ -1,0 +1,211 @@
+From 5d7d9100117d9b41e9115cbe9ce645bf3a55e040 Mon Sep 17 00:00:00 2001
+From: Engardium <entaro@live.ru>
+Date: Wed, 20 Jul 2022 19:29:33 +0300
+Subject: [PATCH] UpdateLevelByTarget
+
+---
+ .../game/Entities/Creature/CreatureData.h     |   8 +-
+ src/server/game/Entities/Unit/Unit.cpp        | 117 ++++++++++++++++++
+ src/server/game/Entities/Unit/Unit.h          |   2 +
+ 3 files changed, 123 insertions(+), 4 deletions(-)
+
+diff --git a/src/server/game/Entities/Creature/CreatureData.h b/src/server/game/Entities/Creature/CreatureData.h
+index 7d454e8e6..576e1dd1f 100644
+--- a/src/server/game/Entities/Creature/CreatureData.h
++++ b/src/server/game/Entities/Creature/CreatureData.h
+@@ -300,9 +300,9 @@ struct CreatureBaseStats
+ 
+     // Helpers
+ 
+-    uint32 GenerateHealth(CreatureTemplate const* info) const
++    uint32 GenerateHealth(CreatureTemplate const* info, uint32 expansion = 0) const
+     {
+-        return uint32(std::ceil(BaseHealth[info->expansion] * info->ModHealth));
++        return uint32(std::ceil(BaseHealth[expansion == 0 ? info->expansion : expansion] * info->ModHealth));
+     }
+ 
+     uint32 GenerateMana(CreatureTemplate const* info) const
+@@ -319,9 +319,9 @@ struct CreatureBaseStats
+         return uint32(std::ceil(BaseArmor * info->ModArmor));
+     }
+ 
+-    float GenerateBaseDamage(CreatureTemplate const* info) const
++    float GenerateBaseDamage(CreatureTemplate const* info, uint32 expansion = 0) const
+     {
+-        return BaseDamage[info->expansion];
++        return BaseDamage[expansion == 0 ? info->expansion : expansion];
+     }
+ 
+     static CreatureBaseStats const* GetBaseStats(uint8 level, uint8 unitClass);
+diff --git a/src/server/game/Entities/Unit/Unit.cpp b/src/server/game/Entities/Unit/Unit.cpp
+index 1823c9be7..6e799458c 100644
+--- a/src/server/game/Entities/Unit/Unit.cpp
++++ b/src/server/game/Entities/Unit/Unit.cpp
+@@ -785,6 +785,8 @@ void Unit::DealDamageMods(Unit const* victim, uint32& damage, uint32* absorb)
+ 
+ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage const* cleanDamage, DamageEffectType damagetype, SpellSchoolMask damageSchoolMask, SpellInfo const* spellProto, bool durabilityLoss, bool /*allowGM*/, Spell const* damageSpell /*= nullptr*/)
+ {
++    if (attacker && (attacker->GetTypeId() == TYPEID_PLAYER || attacker->GetTypeId() == TYPEID_UNIT) && victim->GetTypeId() == TYPEID_UNIT)
++        victim->UpdateLevelByTarget(attacker);
+     // Xinef: initialize damage done for rage calculations
+     // Xinef: its rare to modify damage in hooks, however training dummy's sets damage to 0
+     uint32 rage_damage = damage + ((cleanDamage != nullptr) ? cleanDamage->absorbed_damage : 0);
+@@ -1013,6 +1015,7 @@ uint32 Unit::DealDamage(Unit* attacker, Unit* victim, uint32 damage, CleanDamage
+         //if (attacker && victim->GetTypeId() == TYPEID_PLAYER && victim != attacker)
+         //victim->ToPlayer()->UpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_TOTAL_DAMAGE_RECEIVED, health); // pussywizard: optimization
+         Unit::Kill(attacker, victim, durabilityLoss, cleanDamage ? cleanDamage->attackType : BASE_ATTACK, spellProto, damageSpell);
++        if (!(victim->GetMap()->IsDungeon() || victim->GetMap()->IsRaid())) victim->UpdateLevelByTarget(NULL);
+     }
+     else
+     {
+@@ -9912,6 +9915,7 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
+     // remove SPELL_AURA_MOD_UNATTACKABLE at attack (in case non-interruptible spells stun aura applied also that not let attack)
+     if (HasAuraType(SPELL_AURA_MOD_UNATTACKABLE))
+         RemoveAurasByType(SPELL_AURA_MOD_UNATTACKABLE);
++    if (!(GetMap()->IsDungeon() || GetMap()->IsRaid())) UpdateLevelByTarget(victim);
+ 
+     if (m_attacking)
+     {
+@@ -10015,6 +10019,116 @@ bool Unit::AttackStop()
+     return true;
+ }
+ 
++void Unit::UpdateAllStats(Unit* enemy, uint8 level)
++{
++    CreatureTemplate const* cInfo = ToCreature()->GetCreatureTemplate();
++
++    uint32 rank = IsPet() ? 0 : cInfo->rank;
++
++    // level
++    SetLevel(level);
++
++    uint32 expansion = 0;
++    if (level >= 58)
++        expansion = 1;
++    if (level >= 68)
++        expansion = 2;
++
++    CreatureBaseStats const* stats = sObjectMgr->GetCreatureBaseStats(level, cInfo->unit_class);
++
++    // health
++    float healthmod = 1;
++    switch (rank) // define rates for each elite rank
++    {
++    case CREATURE_ELITE_NORMAL:
++        healthmod = sWorld->getRate(RATE_CREATURE_NORMAL_HP);
++        break;
++    case CREATURE_ELITE_ELITE:
++        healthmod = sWorld->getRate(RATE_CREATURE_ELITE_ELITE_HP);
++        break;
++    case CREATURE_ELITE_RAREELITE:
++        healthmod = sWorld->getRate(RATE_CREATURE_ELITE_RAREELITE_HP);
++        break;
++    case CREATURE_ELITE_WORLDBOSS:
++        healthmod = sWorld->getRate(RATE_CREATURE_ELITE_WORLDBOSS_HP);
++        break;
++    case CREATURE_ELITE_RARE:
++        healthmod = sWorld->getRate(RATE_CREATURE_ELITE_RARE_HP);
++        break;
++    default:
++        healthmod = sWorld->getRate(RATE_CREATURE_ELITE_ELITE_HP);
++        break;
++    }
++
++    uint32 stats_modify = 1;
++    //	if ((enemy && !this->ToCreature()->isElite() && (enemy->GetTypeId() == TYPEID_PLAYER
++    //		 && enemy->ToPlayer()->GetAverageItemLevel() >= 226)))
++    //		 stats_modify = 3;
++
++    uint32 basehp = stats->GenerateHealth(cInfo, expansion);
++    // Updating the number of health and increase it if the equipment level above 226
++    uint32 health   = uint32(basehp * healthmod) * stats_modify;
++    uint32 curentHP = GetMaxHealth() - GetHealth();
++
++    SetCreateHealth(health);
++    SetMaxHealth(health);
++    if (IsAlive() && !isDead())
++        SetHealth(health - (IsInCombat() ? curentHP : 0));
++    //ToCreature()->ResetPlayerDamageReq();
++
++    // mana
++    uint32 mana = stats->GenerateMana(cInfo);
++
++    SetCreateMana(mana);
++   SetMaxPower(POWER_MANA, mana); // MAX Mana
++    SetPower(POWER_MANA, mana);
++
++    SetModifierValue(UNIT_MOD_HEALTH, BASE_VALUE, (float) health);
++    SetModifierValue(UNIT_MOD_MANA, BASE_VALUE, (float) mana);
++
++    // damage
++
++    float basedamage = stats->GenerateBaseDamage(cInfo, expansion);
++
++    float weaponBaseMinDamage = basedamage * stats_modify;
++    float weaponBaseMaxDamage = basedamage * 1.5f * stats_modify;
++
++    SetBaseWeaponDamage(BASE_ATTACK, MINDAMAGE, weaponBaseMinDamage);
++    SetBaseWeaponDamage(BASE_ATTACK, MAXDAMAGE, weaponBaseMaxDamage);
++
++    SetBaseWeaponDamage(OFF_ATTACK, MINDAMAGE, weaponBaseMinDamage);
++    SetBaseWeaponDamage(OFF_ATTACK, MAXDAMAGE, weaponBaseMaxDamage);
++
++    SetBaseWeaponDamage(RANGED_ATTACK, MINDAMAGE, weaponBaseMinDamage);
++    SetBaseWeaponDamage(RANGED_ATTACK, MAXDAMAGE, weaponBaseMaxDamage);
++
++    SetModifierValue(UNIT_MOD_ATTACK_POWER, BASE_VALUE, stats->AttackPower);
++    SetModifierValue(UNIT_MOD_ATTACK_POWER_RANGED, BASE_VALUE, stats->RangedAttackPower);
++
++    float armor = (float) stats->GenerateArmor(cInfo);
++    SetModifierValue(UNIT_MOD_ARMOR, BASE_VALUE, armor);
++
++    SetCanModifyStats(true);
++    ToCreature()->UpdateAllStats();
++}
++
++void Unit::UpdateLevelByTarget(Unit* target)
++{
++    if (GetTypeId() != TYPEID_UNIT || ToCreature()->IsCritter() || IsPet() || IsGuardian() || IsTotem())
++        return;
++
++    if ((!IsAlive() && isDead()) || (!target && IsAlive() && !IsPet() && !IsGuardian() && !IsTotem()))
++    {
++        if (CreatureTemplate const* cinfo = ToCreature()->GetCreatureTemplate())
++            UpdateAllStats(target, cinfo->maxlevel);
++    }
++    else
++    {
++        if (target && (target->GetTypeId() == TYPEID_PLAYER || target->IsPet() || target->IsGuardian()) && IsAlive() && !isDead() && (getLevel() + 2) < (target)->getLevel())
++            UpdateAllStats(target, target->getLevel());
++    }
++}
++
+ void Unit::CombatStop(bool includingCast)
+ {
+     if (includingCast && IsNonMeleeSpellCast(false))
+@@ -13229,6 +13343,9 @@ void Unit::ClearInCombat()
+     m_CombatTimer = 0;
+     RemoveUnitFlag(UNIT_FLAG_IN_COMBAT);
+ 
++    if (!(GetMap()->IsDungeon() || GetMap()->IsRaid()))
++        UpdateLevelByTarget(NULL);
++
+     // Player's state will be cleared in Player::UpdateContestedPvP
+     if (Creature* creature = ToCreature())
+     {
+diff --git a/src/server/game/Entities/Unit/Unit.h b/src/server/game/Entities/Unit/Unit.h
+index 39983f0d0..7ffbbffd8 100644
+--- a/src/server/game/Entities/Unit/Unit.h
++++ b/src/server/game/Entities/Unit/Unit.h
+@@ -1665,6 +1665,8 @@ public:
+     void CombatStartOnCast(Unit* target, bool initialAggro = true, uint32 duration = 0);
+     void SetInCombatState(bool PvP, Unit* enemy = nullptr, uint32 duration = 0);
+     void SetInCombatWith(Unit* enemy, uint32 duration = 0);
++    void UpdateLevelByTarget(Unit* enemy);
++    void UpdateAllStats(Unit * enemy, uint8 lvl);
+     void ClearInCombat();
+     void ClearInPetCombat();
+     [[nodiscard]] uint32 GetCombatTimer() const { return m_CombatTimer; }
+-- 
+2.36.1.windows.1
+

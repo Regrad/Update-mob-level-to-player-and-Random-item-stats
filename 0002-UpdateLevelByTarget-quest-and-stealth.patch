@@ -1,0 +1,65 @@
+From 2bdb65ab663feeb18dbe5f051d60a9863a7c620d Mon Sep 17 00:00:00 2001
+From: Engardiume <entaro@live.ru>
+Date: Wed, 14 Sep 2022 21:46:31 +0300
+Subject: [PATCH] OtherSmall
+
+---
+ src/server/game/Entities/Creature/Creature.cpp | 3 ++-
+ src/server/game/Entities/Object/Object.cpp     | 2 +-
+ src/server/game/Quests/QuestDef.cpp            | 4 ++--
+ 3 files changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/src/server/game/Entities/Creature/Creature.cpp b/src/server/game/Entities/Creature/Creature.cpp
+index 99fa625f8..1810284eb 100644
+--- a/src/server/game/Entities/Creature/Creature.cpp
++++ b/src/server/game/Entities/Creature/Creature.cpp
+@@ -3275,9 +3275,10 @@ float Creature::GetAggroRange(Unit const* target) const
+ 
+     // Minimum Aggro Radius for a mob seems to be combat range (5 yards)
+     // hunter pets seem to ignore minimum aggro radius so we'll default it a little higher
+-    float minRange = IsPet() ? 10.0f : 5.0f;
++    float minRange = IsPet() ? 10.0f : 20.0f;
+     if (aggroRadius < minRange)
+         aggroRadius = minRange;
++    if (IsGuardian()) aggroRadius = 1;
+ 
+     return (aggroRadius * aggroRate);
+ }
+diff --git a/src/server/game/Entities/Object/Object.cpp b/src/server/game/Entities/Object/Object.cpp
+index 7a763cef6..c321b7403 100644
+--- a/src/server/game/Entities/Object/Object.cpp
++++ b/src/server/game/Entities/Object/Object.cpp
+@@ -1981,7 +1981,7 @@ bool WorldObject::CanDetectStealthOf(WorldObject const* obj, bool checkAlert) co
+         // Level difference: 5 point / level, starting from level 1.
+         // There may be spells for this and the starting points too, but
+         // not in the DBCs of the client.
+-        detectionValue += int32(getLevelForTarget(obj) - 1) * 5;
++        detectionValue += int32(obj->getLevelForTarget(obj) - 1) * 5;
+ 
+         // Apply modifiers
+         detectionValue += m_stealthDetect.GetValue(StealthType(i));
+diff --git a/src/server/game/Quests/QuestDef.cpp b/src/server/game/Quests/QuestDef.cpp
+index e28a7c437..bdbd419b2 100644
+--- a/src/server/game/Quests/QuestDef.cpp
++++ b/src/server/game/Quests/QuestDef.cpp
+@@ -186,7 +186,7 @@ void Quest::LoadQuestTemplateAddon(Field* fields)
+ 
+ uint32 Quest::XPValue(uint8 playerLevel) const
+ {
+-    int32 quest_level = (Level == -1 ? playerLevel : Level);
++    int32 quest_level = playerLevel;
+     const QuestXPEntry* xpentry = sQuestXPStore.LookupEntry(quest_level);
+     if (!xpentry)
+     {
+@@ -248,7 +248,7 @@ uint32 Quest::GetRewMoneyMaxLevel() const
+     if (HasFlag(QUEST_FLAGS_NO_MONEY_FROM_XP))
+         return 0;
+ 
+-    return static_cast<int32>(RewardBonusMoney * sWorld->getRate(RATE_REWARD_BONUS_MONEY) * sWorld->getRate(RATE_DROP_MONEY));
++    return static_cast<int32>(RewardBonusMoney != 0 ? 200000 : RewardBonusMoney * sWorld->getRate(RATE_REWARD_BONUS_MONEY) * sWorld->getRate(RATE_DROP_MONEY));
+ }
+ 
+ bool Quest::IsAutoAccept() const
+-- 
+2.37.2.windows.2
+

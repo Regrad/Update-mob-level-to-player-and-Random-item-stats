@@ -1,0 +1,33 @@
+From e3b9c338627fb4c0b83280ecf6b434f6b984b6ef Mon Sep 17 00:00:00 2001
+From: Engardium <entaro@live.ru>
+Date: Thu, 29 Apr 2021 17:27:40 +0300
+Subject: [PATCH] Refount-system-delete
+
+---
+ src/server/game/Entities/Player/Player.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/server/game/Entities/Player/Player.cpp b/src/server/game/Entities/Player/Player.cpp
+index 3969d3ae..0513f4d4 100644
+--- a/src/server/game/Entities/Player/Player.cpp
++++ b/src/server/game/Entities/Player/Player.cpp
+@@ -22581,7 +22581,7 @@ inline bool Player::_StoreOrEquipNewItem(uint32 vendorslot, uint32 item, uint8 c
+ 
+         if (!bStore)
+             AutoUnequipOffhandIfNeed();
+-
++/*
+         if (pProto->Flags & ITEM_FLAG_ITEM_PURCHASE_RECORD && crItem->ExtendedCost && pProto->GetMaxStackSize() == 1)
+         {
+             it->SetFlag(ITEM_FIELD_FLAGS, ITEM_FIELD_FLAG_REFUNDABLE);
+@@ -22591,6 +22591,7 @@ inline bool Player::_StoreOrEquipNewItem(uint32 vendorslot, uint32 item, uint8 c
+             it->SaveRefundDataToDB();
+             AddRefundReference(it->GetGUID());
+         }
++*/
+     }
+ 
+     sScriptMgr->OnAfterStoreOrEquipNewItem(this, vendorslot, it, count, bag, slot, pProto, pVendor, crItem, bStore);
+-- 
+2.31.1.windows.1
+
